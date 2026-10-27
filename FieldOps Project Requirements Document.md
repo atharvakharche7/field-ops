@@ -51,11 +51,12 @@ Install everything on Day 0 or the morning of Day 1, so the build days go to cod
 | IntelliJ IDEA | Backend code | Opens a Spring project |
 | MySQL 8 + MySQL Workbench | Database | Can create a schema |
 | Postman | Test APIs before the app exists | Sends a request |
-| Node.js LTS (20+) | Runs Expo and the React Native tools | `node -v` |
+| Node.js LTS (22.13+ / 24) | Runs Expo and the React Native tools | `node -v` |
+| pnpm (via Corepack) | Package manager used for this whole project instead of npm | `corepack enable pnpm`, then `pnpm -v` |
 | VS Code | App code | — |
 | Expo Go app on your Android phone | Run the app on a real device | Scans a QR code |
 | Git + GitHub account | Version control and portfolio | `git --version` |
-| Expo account (free) | Build the APK with EAS | `npx eas-cli login` |
+| Expo account (free) | Build the APK with EAS | `pnpm dlx eas-cli login` |
 | Android Studio (optional) | Emulator if your phone isn't available | Starts an emulator |
 
 **Network setup.** Your phone and laptop must be on the same Wi-Fi. The app calls the backend using your laptop's local IP address (for example `http://192.168.1.5:8080`), not `localhost`, because `localhost` on the phone means the phone itself. Find it with `ipconfig` on Windows. Allow port 8080 through Windows Firewall if requests time out.
@@ -440,15 +441,15 @@ One Expo app with TypeScript serves both roles; after login, the navigator shows
 **Create the project**
 
 ```bash
-npx create-expo-app@latest fieldops-app --template blank-typescript
+pnpm create expo-app fieldops-app --template blank-typescript
 cd fieldops-app
-npx expo install @react-navigation/native @react-navigation/native-stack @react-navigation/bottom-tabs react-native-screens react-native-safe-area-context
-npx expo install expo-secure-store @react-native-async-storage/async-storage @react-native-community/netinfo
-npx expo install expo-image-picker expo-location expo-crypto
-npm install @tanstack/react-query axios
+pnpm expo install @react-navigation/native @react-navigation/native-stack @react-navigation/bottom-tabs react-native-screens react-native-safe-area-context
+pnpm expo install expo-secure-store @react-native-async-storage/async-storage @react-native-community/netinfo
+pnpm expo install expo-image-picker expo-location expo-crypto
+pnpm add @tanstack/react-query axios
 ```
 
-Use `npx expo install` for native modules so you get versions that match your Expo SDK. `expo-crypto` gives you `randomUUID()` for `clientUpdateId`.
+Use `pnpm expo install` for native modules so you get versions that match your Expo SDK. `expo-crypto` gives you `randomUUID()` for `clientUpdateId`.
 
 **Folder structure**
 
@@ -708,7 +709,7 @@ Plan on 5–6 focused hours a day. Each day ends with a "done when" check; don't
 
 **Day 7: ship it**
 
-- [ ] Build an APK: `npx eas-cli build -p android --profile preview` (set `"buildType": "apk"` in `eas.json` under the preview profile)
+- [ ] Build an APK: `pnpm dlx eas-cli build -p android --profile preview` (set `"buildType": "apk"` in `eas.json` under the preview profile)
 - [ ] Take 6–8 screenshots
 - [ ] Record a 60–90 second demo video
 - [ ] Write both READMEs
