@@ -1,0 +1,343 @@
+{
+  "info": {
+    "name": "FieldOps API",
+    "description": "All FieldOps endpoints. Run the three requests in '0. Login' first: each saves its token into a collection variable (techToken, tech2Token, supervisorToken), which the other requests use.\n\nChange baseUrl to http://<laptop-ip>:8080 to call the API from another device.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "techToken", "value": "" },
+    { "key": "tech2Token", "value": "" },
+    { "key": "supervisorToken", "value": "" },
+    { "key": "ticketId", "value": "1" },
+    { "key": "attachmentId", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "0. Login",
+      "item": [
+        {
+          "name": "Login as tech1 (Ravi)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('techToken', pm.response.json().token);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{ \"email\": \"tech1@fieldops.dev\", \"password\": \"Password@123\" }" }
+          }
+        },
+        {
+          "name": "Login as tech2 (Priya)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('tech2Token', pm.response.json().token);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{ \"email\": \"tech2@fieldops.dev\", \"password\": \"Password@123\" }" }
+          }
+        },
+        {
+          "name": "Login as supervisor",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('supervisorToken', pm.response.json().token);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{ \"email\": \"supervisor@fieldops.dev\", \"password\": \"Password@123\" }" }
+          }
+        },
+        {
+          "name": "Login with wrong password (401)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401', () => pm.response.to.have.status(401));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{ \"email\": \"tech1@fieldops.dev\", \"password\": \"wrong\" }" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Me (tech1)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
+            "url": "{{baseUrl}}/api/auth/me"
+          }
+        },
+        {
+          "name": "Me without token (401)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401', () => pm.response.to.have.status(401));"
+          ] } }],
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/auth/me" }
+        }
+      ]
+    },
+    {
+      "name": "2. Tickets",
+      "item": [
+        {
+          "name": "My tickets (tech1)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/tickets?page=0&size=20",
+              "host": ["{{baseUrl}}"], "path": ["api", "tickets"],
+              "query": [
+                { "key": "status", "value": "IN_PROGRESS", "disabled": true },
+                { "key": "priority", "value": "CRITICAL", "disabled": true },
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "All tickets (supervisor)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{supervisorToken}}" }],
+            "url": "{{baseUrl}}/api/tickets"
+          }
+        },
+        {
+          "name": "Ticket detail (tech1)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
+            "url": "{{baseUrl}}/api/tickets/{{ticketId}}"
+          }
+        },
+        {
+          "name": "Someone else's ticket (403)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('403', () => pm.response.to.have.status(403));"
+          ] } }],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
+            "url": "{{baseUrl}}/api/tickets/2"
+          }
+        },
+        {
+          "name": "Ticket that doesn't exist (404)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
+            "url": "{{baseUrl}}/api/tickets/999"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Updates",
+      "description": "multipart/form-data: a 'data' text part with JSON, and zero or more 'photos' file parts. Pick photo files in the Body tab before sending. {{$guid}} makes a new clientUpdateId each time.",
+      "item": [
+        {
+          "name": "Start work: ASSIGNED -> IN_PROGRESS",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "const a = pm.response.json().attachments;",
+            "if (a.length) pm.collectionVariables.set('attachmentId', a[0].id);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
+            "url": "{{baseUrl}}/api/tickets/{{ticketId}}/updates",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "data", "type": "text", "contentType": "application/json",
+                  "value": "{ \"clientUpdateId\": \"{{$guid}}\", \"toStatus\": \"IN_PROGRESS\", \"note\": \"Reached site, checking the access point\", \"latitude\": 21.1521, \"longitude\": 79.0882, \"deviceTime\": \"2026-10-29T09:18:00\" }" },
+                { "key": "photos", "type": "file", "src": [] }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Resolve: IN_PROGRESS -> RESOLVED",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
+            "url": "{{baseUrl}}/api/tickets/{{ticketId}}/updates",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "data", "type": "text", "contentType": "application/json",
+                  "value": "{ \"clientUpdateId\": \"{{$guid}}\", \"toStatus\": \"RESOLVED\", \"note\": \"Replaced faulty PoE injector. AP back online, speed test 45 Mbps.\", \"latitude\": 21.1521, \"longitude\": 79.0882, \"deviceTime\": \"2026-10-29T10:05:00\" }" },
+                { "key": "photos", "type": "file", "src": [] }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Retry with the same clientUpdateId (200, no duplicate)",
+          "description": "Send once (201), then send again unchanged: the second reply is 200 with the same update id.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
+            "url": "{{baseUrl}}/api/tickets/{{ticketId}}/updates",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "data", "type": "text", "contentType": "application/json",
+                  "value": "{ \"clientUpdateId\": \"6f1c2a9e-8b1d-4c5e-9a77-2d3f4e5a6b7c\", \"toStatus\": \"IN_PROGRESS\", \"note\": \"Same update sent twice\" }" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Going backwards (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
+            "url": "{{baseUrl}}/api/tickets/{{ticketId}}/updates",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "data", "type": "text", "contentType": "application/json",
+                  "value": "{ \"clientUpdateId\": \"{{$guid}}\", \"toStatus\": \"ASSIGNED\", \"note\": \"x\" }" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Resolve without a note (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
+            "url": "{{baseUrl}}/api/tickets/{{ticketId}}/updates",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "data", "type": "text", "contentType": "application/json",
+                  "value": "{ \"clientUpdateId\": \"{{$guid}}\", \"toStatus\": \"RESOLVED\" }" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Other technician updates (403)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tech2Token}}" }],
+            "url": "{{baseUrl}}/api/tickets/{{ticketId}}/updates",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "data", "type": "text", "contentType": "application/json",
+                  "value": "{ \"clientUpdateId\": \"{{$guid}}\", \"toStatus\": \"RESOLVED\", \"note\": \"x\" }" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Photos",
+      "item": [
+        {
+          "name": "Download photo (tech1)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
+            "url": "{{baseUrl}}/api/attachments/{{attachmentId}}"
+          }
+        },
+        {
+          "name": "Download photo as other technician (403)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tech2Token}}" }],
+            "url": "{{baseUrl}}/api/attachments/{{attachmentId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Supervisor",
+      "item": [
+        {
+          "name": "Create ticket",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{supervisorToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/tickets",
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Fibre link down\",\n  \"description\": \"Link between Wardha and Nagpur showing loss of signal\",\n  \"category\": \"FIBRE_CUT\",\n  \"priority\": \"HIGH\",\n  \"siteId\": 3,\n  \"assignedToId\": 2\n}" }
+          }
+        },
+        {
+          "name": "Create ticket as technician (403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{techToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/tickets",
+            "body": { "mode": "raw", "raw": "{ \"title\": \"x\", \"category\": \"OTHER\", \"priority\": \"LOW\", \"siteId\": 1 }" }
+          }
+        },
+        {
+          "name": "Assign / reassign ticket",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{supervisorToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/tickets/6/assign",
+            "body": { "mode": "raw", "raw": "{ \"technicianId\": 3 }" }
+          }
+        },
+        {
+          "name": "Dashboard summary",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{supervisorToken}}" }],
+            "url": "{{baseUrl}}/api/dashboard/summary"
+          }
+        },
+        {
+          "name": "Technicians (dropdown)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{supervisorToken}}" }],
+            "url": "{{baseUrl}}/api/users?role=TECHNICIAN"
+          }
+        },
+        {
+          "name": "Sites (dropdown)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{supervisorToken}}" }],
+            "url": "{{baseUrl}}/api/sites"
+          }
+        }
+      ]
+    }
+  ]
+}
