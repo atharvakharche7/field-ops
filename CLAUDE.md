@@ -13,7 +13,7 @@ The spec for this project is [FieldOps Project Requirements Document.md](FieldOp
 
 ## Workflow
 
-- **Package manager:** use pnpm only, never npm or npx. `pnpm add`, `pnpm expo install`, `pnpm expo start`, `pnpm dlx <tool>`, `pnpm exec <bin>`. Keep `mobile/.npmrc` (`node-linker=hoisted`).
+- **Package manager:** use pnpm only, never npm or npx. `pnpm add`, `pnpm expo install`, `pnpm expo start`, `pnpm dlx <tool>`, `pnpm exec <bin>`. Keep `nodeLinker: hoisted` in `mobile/pnpm-workspace.yaml` (pnpm 12 ignores this setting in `.npmrc`).
 - **Never commit or push.** Create the day's branch, `git add` the changes, and suggest a commit message. The user reviews the staged changes in VS Code's Source Control, then commits and pushes themselves.
 - **Git:** one branch per build day, off `main`. Use conventional prefixes (`feat/`, `fix/`, `chore/`, `docs/`, `test/`) and never put "day" in a branch name.
 - **Explanations:** after every step, explain what was done and every new tool or term in simple, beginner-friendly language.
