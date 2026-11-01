@@ -3,15 +3,19 @@ package com.fieldops.exception;
 import com.fieldops.dto.response.ApiError;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
@@ -60,6 +64,29 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ApiError> tooLarge(MaxUploadSizeExceededException e, HttpServletRequest req) {
         return build(HttpStatus.BAD_REQUEST, "File is too large (max 5 MB per photo)", req);
+    }
+
+    // e.g. a multipart request without its "data" part
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiError> missingPart(MissingServletRequestPartException e, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, "Missing request part: " + e.getRequestPartName(), req);
+    }
+
+    // e.g. ?status=BANANA or /api/tickets/abc
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> typeMismatch(MethodArgumentTypeMismatchException e, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, "Invalid value for " + e.getName() + ": " + e.getValue(), req);
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiError> mediaType(HttpMediaTypeNotSupportedException e, HttpServletRequest req) {
+        return build(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Content type " + e.getContentType() + " is not supported here", req);
+    }
+
+    // A unique column refused a row: e.g. the same offline update arriving twice at the same instant.
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiError> conflict(DataIntegrityViolationException e, HttpServletRequest req) {
+        return build(HttpStatus.CONFLICT, "This was already saved, or conflicts with existing data", req);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
