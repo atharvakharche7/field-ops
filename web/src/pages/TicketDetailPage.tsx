@@ -1,4 +1,6 @@
 import { ApiError } from '@/api/client'
+import { useAuth } from '@/auth/AuthContext'
+import { AssignDialog } from '@/components/AssignDialog'
 import { getTicket } from '@/api/tickets'
 import { ErrorState } from '@/components/ErrorState'
 import { PriorityBadge } from '@/components/PriorityBadge'
@@ -7,10 +9,11 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CATEGORY_LABEL, STATUS_LABEL, directionsUrl, formatDateTime, pinUrl } from '@/lib/format'
+import { allowedNextStatuses } from '@/lib/status'
 import type { TicketDetail, Update } from '@/types'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, ArrowRight, MapPin, Navigation } from 'lucide-react'
-import { useLocation, useNavigate, useParams } from 'react-router'
+import { ArrowLeft, ArrowRight, MapPin, Navigation, SquarePen } from 'lucide-react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
 
 export function TicketDetailPage() {
   const params = useParams()
@@ -30,7 +33,7 @@ export function TicketDetailPage() {
   return (
     <div className="flex flex-col gap-4">
       <Button variant="ghost" className="h-11 w-fit px-2 text-muted-foreground" onClick={goBack}>
-        <ArrowLeft aria-hidden /> Tickets
+        <ArrowLeft aria-hidden /> Back
       </Button>
 
       {!Number.isInteger(id) ? (
@@ -47,8 +50,12 @@ export function TicketDetailPage() {
 }
 
 function TicketDetailView({ ticket }: { ticket: TicketDetail }) {
-  // Newest first: the latest work is what a technician or supervisor looks for.
-  const updates = [...ticket.updates].sort((a, b) => b.deviceTime.localeCompare(a.deviceTime))
+  const { user } = useAuth()
+  // Newest first: the latest work is what a technician or supervisor looks for. Same time → later id first.
+  const updates = [...ticket.updates].sort((a, b) => b.deviceTime.localeCompare(a.deviceTime) || b.id - a.id)
+  // Technicians can update their own unfinished tickets; supervisors can (re)assign anything not resolved.
+  const canUpdate = user?.role === 'TECHNICIAN' && ticket.assignedTo?.id === user.id && allowedNextStatuses(ticket.status).length > 0
+  const canAssign = user?.role === 'SUPERVISOR' && ticket.status !== 'RESOLVED'
 
   return (
     <>
@@ -76,11 +83,21 @@ function TicketDetailView({ ticket }: { ticket: TicketDetail }) {
             </div>
           </div>
           {/* A plain link: on phones it opens the Google Maps app with directions */}
-          <Button asChild className="h-11">
-            <a href={directionsUrl(ticket.site.latitude, ticket.site.longitude)} target="_blank" rel="noopener noreferrer">
-              <Navigation aria-hidden /> Navigate
-            </a>
-          </Button>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {canUpdate && (
+              <Button asChild className="h-11">
+                <Link to={`/tickets/${ticket.id}/update`}>
+                  <SquarePen aria-hidden /> Update status
+                </Link>
+              </Button>
+            )}
+            <Button asChild variant={canUpdate ? 'outline' : 'default'} className="h-11">
+              <a href={directionsUrl(ticket.site.latitude, ticket.site.longitude)} target="_blank" rel="noopener noreferrer">
+                <Navigation aria-hidden /> Navigate
+              </a>
+            </Button>
+            {canAssign && <AssignDialog ticket={ticket} />}
+          </div>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-t pt-4 text-sm">
             <Detail label="Assigned to" value={ticket.assignedTo?.name ?? 'Unassigned'} />
             <Detail label="Created" value={formatDateTime(ticket.createdAt)} />
@@ -112,7 +129,14 @@ function TimelineItem({ update }: { update: Update }) {
     <li className="relative">
       <span className="absolute top-1.5 -left-[29px] size-2.5 rounded-full bg-primary ring-4 ring-background" aria-hidden />
       <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
-        {STATUS_LABEL[update.fromStatus]} <ArrowRight className="size-3.5" aria-label="to" /> {STATUS_LABEL[update.toStatus]}
+        {update.fromStatus === update.toStatus ? (
+          // Only a reassignment keeps the status the same (Assigned → Assigned); the note says who to whom.
+          'Reassigned'
+        ) : (
+          <>
+            {STATUS_LABEL[update.fromStatus]} <ArrowRight className="size-3.5" aria-label="to" /> {STATUS_LABEL[update.toStatus]}
+          </>
+        )}
       </p>
       <p className="text-xs text-muted-foreground">
         {update.updatedByName} · {formatDateTime(update.deviceTime)}

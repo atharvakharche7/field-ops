@@ -1,8 +1,8 @@
 import { useAuth } from '@/auth/AuthContext'
 import type { Role } from '@/types'
 import { cn } from 'cn'
-import { ClipboardList, RadioTower, UserRound, type LucideIcon } from 'lucide-react'
-import { NavLink, Outlet } from 'react-router'
+import { ClipboardList, LayoutDashboard, Plus, RadioTower, UserRound, type LucideIcon } from 'lucide-react'
+import { Link, Outlet, useLocation } from 'react-router'
 
 interface NavItem {
   to: string
@@ -11,11 +11,21 @@ interface NavItem {
   roles: Role[]
 }
 
-// Day 5 adds Dashboard and New (supervisor only).
 const NAV: NavItem[] = [
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['SUPERVISOR'] },
   { to: '/tickets', label: 'Tickets', icon: ClipboardList, roles: ['TECHNICIAN', 'SUPERVISOR'] },
+  { to: '/tickets/new', label: 'New', icon: Plus, roles: ['SUPERVISOR'] },
   { to: '/profile', label: 'Profile', icon: UserRound, roles: ['TECHNICIAN', 'SUPERVISOR'] },
 ]
+
+/**
+ * Which tab is lit up. Tickets covers /tickets and every ticket page under it,
+ * except /tickets/new, which has its own tab.
+ */
+function isActive(to: string, path: string): boolean {
+  if (to === '/tickets') return path === '/tickets' || (path.startsWith('/tickets/') && path !== '/tickets/new')
+  return path === to
+}
 
 /**
  * The frame around every logged-in page.
@@ -25,6 +35,7 @@ const NAV: NavItem[] = [
 export function AppLayout() {
   const { user } = useAuth()
   const items = NAV.filter(item => user && item.roles.includes(user.role))
+  const { pathname } = useLocation()
 
   return (
     <div className="min-h-svh md:flex">
@@ -33,19 +44,18 @@ export function AppLayout() {
         <Logo />
         <nav className="mt-8 flex flex-col gap-1">
           {items.map(item => (
-            <NavLink
+            <Link
               key={item.to}
               to={item.to}
-              className={({ isActive }) =>
-                cn(
-                  'flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground',
-                  isActive && 'bg-sidebar-accent text-foreground',
-                )
-              }
+              aria-current={isActive(item.to, pathname) ? 'page' : undefined}
+              className={cn(
+                'flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground',
+                isActive(item.to, pathname) && 'bg-sidebar-accent text-foreground',
+              )}
             >
               <item.icon className="size-4" aria-hidden />
               {item.label}
-            </NavLink>
+            </Link>
           ))}
         </nav>
         {user && (
@@ -71,19 +81,18 @@ export function AppLayout() {
       {/* Bottom tab bar: phones only */}
       <nav className="fixed inset-x-0 bottom-0 z-10 flex border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden">
         {items.map(item => (
-          <NavLink
+          <Link
             key={item.to}
             to={item.to}
-            className={({ isActive }) =>
-              cn(
-                'flex h-16 flex-1 flex-col items-center justify-center gap-1 text-xs font-medium text-muted-foreground',
-                isActive && 'text-foreground',
-              )
-            }
+            aria-current={isActive(item.to, pathname) ? 'page' : undefined}
+            className={cn(
+              'flex h-16 flex-1 flex-col items-center justify-center gap-1 text-xs font-medium text-muted-foreground',
+              isActive(item.to, pathname) && 'text-foreground',
+            )}
           >
             <item.icon className="size-5" aria-hidden />
             {item.label}
-          </NavLink>
+          </Link>
         ))}
       </nav>
     </div>

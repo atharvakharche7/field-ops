@@ -110,7 +110,7 @@ export function useAuth(): AuthState {
   return ctx
 }
 
-/** Where each role lands after login. Supervisors move to /dashboard on Day 5. */
-export function homePath(_user: User): string {
-  return '/tickets'
+/** Where each role lands after login: technicians on their ticket list, supervisors on the dashboard. */
+export function homePath(user: User): string {
+  return user.role === 'SUPERVISOR' ? '/dashboard' : '/tickets'
 }
