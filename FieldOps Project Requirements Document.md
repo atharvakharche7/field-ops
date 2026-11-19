@@ -591,7 +591,8 @@ web/
     │   ├── tickets.ts           // getTickets(), getTicket(), addUpdate(), createTicket(), assign()
     │   └── dashboard.ts         // getSummary(), getTechnicians(), getSites()
     ├── auth/
-    │   └── AuthContext.tsx      // user, login(), logout(); last user cached for offline start
+    │   ├── AuthContext.tsx      // user, login(), logout(); last user cached for offline start
+    │   └── guards.tsx           // RequireAuth, RequireRole, HomeRedirect
     ├── offline/
     │   ├── queue.ts             // add(), getAll(), remove(), count() using IndexedDB
     │   └── useSync.ts           // listens to online/visibility events, flushes the queue
@@ -599,6 +600,8 @@ web/
     │   ├── geo.ts               // getCoords(): GPS with timeout, null on failure
     │   ├── photos.ts            // resizePhoto(): shrink camera photos before upload
     │   ├── status.ts            // allowedNextStatuses(), mirrors Status.canMoveTo
+    │   ├── format.ts            // labels for enums, date format, Google Maps links
+    │   ├── errors.ts            // errorMessage(): any error → a sentence for the user
     │   └── utils.ts             // shadcn's cn() helper
     ├── layouts/
     │   └── AppLayout.tsx        // bottom nav on phones, sidebar on md+ screens; OfflineBanner
@@ -636,7 +639,7 @@ After login, technicians land on `/tickets` and supervisors on `/dashboard`. Nav
 
 - Server data (tickets, dashboard) → TanStack Query. Query keys: `['tickets', filters]`, `['ticket', id]`, `['dashboard']`. After a successful update, call `queryClient.invalidateQueries({ queryKey: ['tickets'] })` and the ticket's key.
 - The query cache is saved to IndexedDB with `PersistQueryClientProvider`, so a technician who opens the app with no signal still sees their tickets and details from the last visit. Set `gcTime` to 24 hours so cached data isn't thrown away before it's saved.
-- Logged-in user → `AuthContext`. On start, call `/api/auth/me`. If that fails because there's no network, use the last user saved in `localStorage` (name and role only, never the token) so the app still opens offline.
+- Logged-in user → `AuthContext`. On start, call `/api/auth/me`. Only a 401 means "logged out". If it fails for any other reason (no network, or a 5xx while the server is down or waking up), use the last user saved in `localStorage` (name and role only, never the token) so the app still opens offline.
 - Offline queue → IndexedDB via `queue.ts`.
 - Form state → local `useState`. No Redux needed; you can say so in an interview and explain why.
 
@@ -828,7 +831,7 @@ The photos themselves are stored in IndexedDB, not just a link to them, so they 
 1. Build the update and give it a new `clientUpdateId`.
 2. Try sending it. Don't trust `navigator.onLine` alone: a phone can be "connected" to Wi-Fi with no internet. A failed `fetch` is the real signal.
 3. If the request succeeds (200 or 201), refresh the ticket and go back.
-4. If it fails with a network error, add it to the queue. Show the toast "Saved offline. Will sync when you're back online", and show the ticket with its new status and a small "Pending sync" label.
+4. If it fails with a network error, or with 502, 503 or 504 (the proxy, Vite or Vercel, couldn't reach the backend, for example while Render wakes up), add it to the queue. Show the toast "Saved offline. Will sync when you're back online", and show the ticket with its new status and a small "Pending sync" label.
 5. If the server returns 400, 403 or 404, do **not** queue it. Show the error message, because retrying won't fix it.
 6. If the server returns 401 (login expired), queue it and send the user to login. It syncs after they log back in.
 
@@ -844,7 +847,7 @@ The photos themselves are stored in IndexedDB, not just a link to them, so they 
 1. If a sync is already running, stop (use a simple `isSyncing` flag so two syncs can't run at once).
 2. Read the queue and send items **one at a time, oldest first**, so updates to the same ticket stay in order.
 3. 200 or 201 → remove the item from the queue.
-4. Network error → stop the loop and try again next time; keep the rest of the queue as it is.
+4. Network error, 502, 503 or 504 → stop the loop and try again next time; keep the rest of the queue as it is.
 5. 401 → stop the loop, keep the queue, and send the user to login.
 6. 400, 403 or 404 → remove the item, keep it in a separate `fieldops.failed` list, and show it on the Profile page so the user knows it didn't go through. Example: the supervisor reassigned the ticket while the technician was offline.
 7. After the loop, invalidate the ticket queries so lists refresh.
@@ -924,14 +927,14 @@ Plan on 5–6 focused hours a day. Each day ends with a "done when" check; don't
 
 * Done when: every Postman request passes against local PostgreSQL using the cookie from login, and a photo upload works with `STORAGE_TYPE=local`.
 
-**Day 4: web shell, login, ticket list**
+**Day 4: web shell, login, ticket list** ✅
 
-- [ ] Create `web/` with Vite, Tailwind, shadcn/ui, React Router, TanStack Query
-- [ ] `api/client.ts`, `AuthContext`, `RequireAuth` and `RequireRole` guards
-- [ ] `AppLayout` with bottom nav (phone) and sidebar (desktop)
-- [ ] Login page
-- [ ] Tickets page with `TicketCard`, badges, status tabs, refresh, loading / empty / error states
-- [ ] Ticket Detail page with timeline, photos and the Navigate link
+- [x] Create `web/` with Vite, Tailwind, shadcn/ui, React Router, TanStack Query
+- [x] `api/client.ts`, `AuthContext`, `RequireAuth` and `RequireRole` guards
+- [x] `AppLayout` with bottom nav (phone) and sidebar (desktop)
+- [x] Login page (with one-tap demo accounts)
+- [x] Tickets page with `TicketCard`, badges, status tabs, refresh, loading / empty / error states
+- [x] Ticket Detail page with timeline, photos and the Navigate link
 
 * Done when: you log in as tech1 and see only tech1's tickets from the real backend, a page reload keeps you logged in, and DevTools shows that `document.cookie` can't see the token.
 
