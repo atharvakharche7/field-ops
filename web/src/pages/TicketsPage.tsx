@@ -1,19 +1,21 @@
 import { getTickets } from '@/api/tickets'
 import { useAuth } from '@/auth/AuthContext'
 import { EmptyState } from '@/components/EmptyState'
+import { PriorityBadge } from '@/components/PriorityBadge'
 import { ErrorState } from '@/components/ErrorState'
 import { TicketCard } from '@/components/TicketCard'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { STATUS_LABEL } from '@/lib/format'
-import type { Status } from '@/types'
+import { PRIORITY_LABEL, STATUS_LABEL } from '@/lib/format'
+import type { Priority, Status } from '@/types'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from 'cn'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, X } from 'lucide-react'
 import { useSearchParams } from 'react-router'
 
 const ALL = 'ALL'
+const PRIORITIES: Priority[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
 
 /**
  * Technicians see their own tickets; supervisors see everyone's. The page asks for the
@@ -28,14 +30,25 @@ export function TicketsPage() {
     ? ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED']
     : ['ASSIGNED', 'IN_PROGRESS', 'RESOLVED']
 
-  // The filter lives in the URL (?status=IN_PROGRESS), so Back from a ticket keeps it.
+  // The filters live in the URL (?status=IN_PROGRESS&priority=CRITICAL), so Back from a ticket keeps them
+  // and the dashboard cards can link straight to a filtered list.
   const [searchParams, setSearchParams] = useSearchParams()
-  const param = searchParams.get('status') as Status | null
-  const status = param && statuses.includes(param) ? param : undefined
+  const statusParam = searchParams.get('status') as Status | null
+  const status = statusParam && statuses.includes(statusParam) ? statusParam : undefined
+  const priorityParam = searchParams.get('priority') as Priority | null
+  const priority = priorityParam && PRIORITIES.includes(priorityParam) ? priorityParam : undefined
+
+  // Change one filter and keep the other.
+  function setFilter(key: 'status' | 'priority', value: string | undefined) {
+    const next = new URLSearchParams(searchParams)
+    if (value) next.set(key, value)
+    else next.delete(key)
+    setSearchParams(next, { replace: true })
+  }
 
   const { data, error, isPending, isFetching, refetch } = useQuery({
-    queryKey: ['tickets', { status }],
-    queryFn: () => getTickets({ status }),
+    queryKey: ['tickets', { status, priority }],
+    queryFn: () => getTickets({ status, priority }),
   })
 
   return (
@@ -61,7 +74,7 @@ export function TicketsPage() {
 
       <Tabs
         value={status ?? ALL}
-        onValueChange={value => setSearchParams(value === ALL ? {} : { status: value }, { replace: true })}
+        onValueChange={value => setFilter('status', value === ALL ? undefined : value)}
       >
         {/* Scrolls sideways on narrow phones instead of squashing the labels */}
         <TabsList className="w-full justify-start overflow-x-auto overflow-y-hidden [scrollbar-width:none] group-data-horizontal/tabs:h-11">
@@ -76,15 +89,29 @@ export function TicketsPage() {
         </TabsList>
       </Tabs>
 
+      {priority && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Showing only</span>
+          <PriorityBadge priority={priority} />
+          <Button variant="ghost" className="h-9 px-2 text-muted-foreground" onClick={() => setFilter('priority', undefined)}>
+            <X aria-hidden /> Clear
+          </Button>
+        </div>
+      )}
+
       {isPending ? (
         <TicketListSkeleton />
       ) : error ? (
         <ErrorState error={error} onRetry={() => refetch()} />
       ) : data.content.length === 0 ? (
         <EmptyState
-          title={status ? `No ${STATUS_LABEL[status].toLowerCase()} tickets` : 'No tickets yet'}
+          title={
+            status || priority
+              ? `No ${[priority && PRIORITY_LABEL[priority], status && STATUS_LABEL[status]].filter(Boolean).join(' ').toLowerCase()} tickets`
+              : 'No tickets yet'
+          }
           description={
-            status ? 'Try another filter.' : isSupervisor ? 'Created tickets will show up here.' : 'Tickets assigned to you will show up here.'
+            status || priority ? 'Try another filter.' : isSupervisor ? 'Created tickets will show up here.' : 'Tickets assigned to you will show up here.'
           }
         />
       ) : (

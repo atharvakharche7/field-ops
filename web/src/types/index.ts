@@ -84,3 +84,32 @@ export interface TicketDetail {
   resolvedAt: string | null
   updates: Update[]
 }
+
+/** The "data" part of POST /api/tickets/{id}/updates. Photos travel as separate file parts. */
+export interface UpdateRequest {
+  clientUpdateId: string // new UUID per Save; the same id on a retry means "same update"
+  toStatus: Status
+  note: string
+  latitude?: number
+  longitude?: number
+  deviceTime: string // phone's local time without a zone, e.g. "2026-10-14T10:05:00"
+}
+
+/** Body of POST /api/tickets. Without assignedToId the ticket starts OPEN. */
+export interface CreateTicketRequest {
+  title: string
+  description?: string
+  category: Category
+  priority: Priority
+  siteId: number
+  assignedToId?: number
+}
+
+/** GET /api/dashboard/summary. Every status and priority is always present, 0 if none. */
+export interface DashboardSummary {
+  byStatus: Record<Status, number>
+  byPriority: Record<Priority, number>
+  resolvedToday: number
+  openCritical: number
+  technicians: { id: number; name: string; activeTickets: number }[]
+}

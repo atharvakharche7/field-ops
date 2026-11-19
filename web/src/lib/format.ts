@@ -46,3 +46,12 @@ export function directionsUrl(lat: number, lng: number): string {
 export function pinUrl(lat: number, lng: number): string {
   return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
 }
+
+/** The phone's local time as "2026-10-14T10:05:00", the zone-less format the backend expects. */
+export function localDateTime(date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return (
+    `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}` +
+    `T${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}`
+  )
+}
