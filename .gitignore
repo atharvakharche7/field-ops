@@ -15,3 +15,6 @@ backend/.mvn/wrapper/maven-wrapper.jar
 # OS
 Thumbs.db
 .DS_Store
+
+# Browser-testing tool output (screenshots, page snapshots)
+.playwright-mcp/
