@@ -26,11 +26,15 @@ public class AuthService {
      * password both throw BadCredentialsException, which becomes the same 401 message,
      * so nobody can use the login form to find out which emails exist.
      */
-    public LoginResponse login(LoginRequest request) {
+    public LoginResult login(LoginRequest request) {
         var auth = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.email(), request.password()));
         AppUser user = (AppUser) auth.getPrincipal();
-        return new LoginResponse(jwtService.generateToken(user), toDto(user));
+        return new LoginResult(jwtService.generateToken(user), new LoginResponse(toDto(user)));
+    }
+
+    /** The token goes into the cookie; only the body goes back as JSON. */
+    public record LoginResult(String token, LoginResponse body) {
     }
 
     @Transactional(readOnly = true)

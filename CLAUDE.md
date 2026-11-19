@@ -13,7 +13,8 @@ The spec for this project is [FieldOps Project Requirements Document.md](FieldOp
 
 ## Workflow
 
-- **Package manager:** use pnpm only, never npm or npx. `pnpm add`, `pnpm expo install`, `pnpm expo start`, `pnpm dlx <tool>`, `pnpm exec <bin>`. Keep `nodeLinker: hoisted` in `mobile/pnpm-workspace.yaml` (pnpm 12 ignores this setting in `.npmrc`).
+- **Package manager:** use pnpm only, never npm or npx. `pnpm add`, `pnpm add -D`, `pnpm dev`, `pnpm build`, `pnpm dlx <tool>`, `pnpm exec <bin>`. The web app lives in `web/` (React + Vite); the backend in `backend/` uses the Maven wrapper (`./mvnw`).
+- **Local database:** PostgreSQL 17 runs in the Docker container `fieldops-postgres` (database `fieldops`, user and password `postgres`, port 5432). Start it with `docker start fieldops-postgres`.
 - **Never commit or push.** Create the day's branch, `git add` the changes, and suggest a commit message. The user reviews the staged changes in VS Code's Source Control, then commits and pushes themselves.
 - **Git:** one branch per build day, off `main`. Use conventional prefixes (`feat/`, `fix/`, `chore/`, `docs/`, `test/`) and never put "day" in a branch name.
 - **Explanations:** after every step, explain what was done and every new tool or term in simple, beginner-friendly language.

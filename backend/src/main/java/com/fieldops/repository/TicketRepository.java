@@ -56,7 +56,7 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
     @EntityGraph(attributePaths = {"site", "assignedTo"})
     Optional<Ticket> findWithSiteAndAssigneeById(Long id);
 
-    // Dashboard counts run in MySQL with GROUP BY, instead of loading every ticket into memory.
+    // Dashboard counts run in the database with GROUP BY, instead of loading every ticket into memory.
     @Query("SELECT t.status, COUNT(t) FROM Ticket t GROUP BY t.status")
     List<Object[]> countByStatus();
 
