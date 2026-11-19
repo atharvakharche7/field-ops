@@ -1,4 +1,5 @@
 package com.fieldops.dto.response;
 
-public record LoginResponse(String token, UserDto user) {
+/** Login body. The token itself travels only in the httpOnly cookie, never in JSON that scripts could read. */
+public record LoginResponse(UserDto user) {
 }

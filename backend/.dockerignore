@@ -1,0 +1,9 @@
+# Files Docker must not copy into the image.
+# .env holds local secrets: it must never end up inside an image.
+.env
+*.env.local
+target/
+uploads/
+.idea/
+.vscode/
+*.iml

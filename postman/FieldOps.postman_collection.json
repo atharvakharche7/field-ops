@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "FieldOps API",
-    "description": "All FieldOps endpoints. Run the three requests in '0. Login' first: each saves its token into a collection variable (techToken, tech2Token, supervisorToken), which the other requests use.\n\nChange baseUrl to http://<laptop-ip>:8080 to call the API from another device.",
+    "description": "All FieldOps endpoints. Run the three requests in '0. Login' first. Login puts the token in an httpOnly cookie (fieldops_token); each login test copies it from the Set-Cookie header into a collection variable (techToken, tech2Token, supervisorToken).\n\nThe other requests send it as 'Authorization: Bearer ...', which the API also accepts, so one run can switch between three users. Postman's cookie jar is turned off on every request so the last login's cookie doesn't leak into the others. '1. Auth' has one request that sends the cookie the way the website does.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -20,8 +20,14 @@
           "name": "Login as tech1 (Ravi)",
           "event": [{ "listen": "test", "script": { "exec": [
             "pm.test('200 OK', () => pm.response.to.have.status(200));",
-            "pm.collectionVariables.set('techToken', pm.response.json().token);"
+            "const setCookie = pm.response.headers.get('Set-Cookie') || '';",
+            "pm.test('Token is in an HttpOnly cookie, not in the body', () => {",
+            "  pm.expect(setCookie).to.include('fieldops_token=').and.include('HttpOnly').and.include('SameSite=Strict');",
+            "  pm.expect(pm.response.json()).to.not.have.property('token');",
+            "});",
+            "pm.collectionVariables.set('techToken', setCookie.match(/fieldops_token=([^;]+)/)[1]);"
           ] } }],
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -33,8 +39,10 @@
           "name": "Login as tech2 (Priya)",
           "event": [{ "listen": "test", "script": { "exec": [
             "pm.test('200 OK', () => pm.response.to.have.status(200));",
-            "pm.collectionVariables.set('tech2Token', pm.response.json().token);"
+            "const setCookie = pm.response.headers.get('Set-Cookie') || '';",
+            "pm.collectionVariables.set('tech2Token', setCookie.match(/fieldops_token=([^;]+)/)[1]);"
           ] } }],
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -46,8 +54,10 @@
           "name": "Login as supervisor",
           "event": [{ "listen": "test", "script": { "exec": [
             "pm.test('200 OK', () => pm.response.to.have.status(200));",
-            "pm.collectionVariables.set('supervisorToken', pm.response.json().token);"
+            "const setCookie = pm.response.headers.get('Set-Cookie') || '';",
+            "pm.collectionVariables.set('supervisorToken', setCookie.match(/fieldops_token=([^;]+)/)[1]);"
           ] } }],
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -60,6 +70,7 @@
           "event": [{ "listen": "test", "script": { "exec": [
             "pm.test('401', () => pm.response.to.have.status(401));"
           ] } }],
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -74,6 +85,7 @@
       "item": [
         {
           "name": "Me (tech1)",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
@@ -85,7 +97,30 @@
           "event": [{ "listen": "test", "script": { "exec": [
             "pm.test('401', () => pm.response.to.have.status(401));"
           ] } }],
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/auth/me" }
+        },
+        {
+          "name": "Me with the cookie, like the website (tech1)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('Logged in as tech1', () => pm.expect(pm.response.json().email).to.eql('tech1@fieldops.dev'));"
+          ] } }],
+          "protocolProfileBehavior": { "disableCookies": true },
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Cookie", "value": "fieldops_token={{techToken}}" }],
+            "url": "{{baseUrl}}/api/auth/me"
+          }
+        },
+        {
+          "name": "Logout (204, deletes the cookie)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('204 No Content', () => pm.response.to.have.status(204));",
+            "pm.test('Cookie is cleared', () => pm.expect(pm.response.headers.get('Set-Cookie')).to.include('Max-Age=0'));"
+          ] } }],
+          "protocolProfileBehavior": { "disableCookies": true },
+          "request": { "method": "POST", "header": [], "url": "{{baseUrl}}/api/auth/logout" }
         }
       ]
     },
@@ -94,6 +129,7 @@
       "item": [
         {
           "name": "My tickets (tech1)",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
@@ -111,6 +147,7 @@
         },
         {
           "name": "All tickets (supervisor)",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{supervisorToken}}" }],
@@ -119,6 +156,7 @@
         },
         {
           "name": "Ticket detail (tech1)",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
@@ -130,6 +168,7 @@
           "event": [{ "listen": "test", "script": { "exec": [
             "pm.test('403', () => pm.response.to.have.status(403));"
           ] } }],
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
@@ -138,6 +177,7 @@
         },
         {
           "name": "Ticket that doesn't exist (404)",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
@@ -157,6 +197,7 @@
             "const a = pm.response.json().attachments;",
             "if (a.length) pm.collectionVariables.set('attachmentId', a[0].id);"
           ] } }],
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
@@ -173,6 +214,7 @@
         },
         {
           "name": "Resolve: IN_PROGRESS -> RESOLVED",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
@@ -190,6 +232,7 @@
         {
           "name": "Retry with the same clientUpdateId (200, no duplicate)",
           "description": "Send once (201), then send again unchanged: the second reply is 200 with the same update id.",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
@@ -205,6 +248,7 @@
         },
         {
           "name": "Going backwards (400)",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
@@ -220,6 +264,7 @@
         },
         {
           "name": "Resolve without a note (400)",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
@@ -235,6 +280,7 @@
         },
         {
           "name": "Other technician updates (403)",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{tech2Token}}" }],
@@ -255,6 +301,7 @@
       "item": [
         {
           "name": "Download photo (tech1)",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{techToken}}" }],
@@ -263,6 +310,7 @@
         },
         {
           "name": "Download photo as other technician (403)",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{tech2Token}}" }],
@@ -279,6 +327,7 @@
           "event": [{ "listen": "test", "script": { "exec": [
             "pm.test('201 Created', () => pm.response.to.have.status(201));"
           ] } }],
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "POST",
             "header": [
@@ -291,6 +340,7 @@
         },
         {
           "name": "Create ticket as technician (403)",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "POST",
             "header": [
@@ -303,6 +353,7 @@
         },
         {
           "name": "Assign / reassign ticket",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "PATCH",
             "header": [
@@ -315,6 +366,7 @@
         },
         {
           "name": "Dashboard summary",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{supervisorToken}}" }],
@@ -323,6 +375,7 @@
         },
         {
           "name": "Technicians (dropdown)",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{supervisorToken}}" }],
@@ -331,6 +384,7 @@
         },
         {
           "name": "Sites (dropdown)",
+          "protocolProfileBehavior": { "disableCookies": true },
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{supervisorToken}}" }],

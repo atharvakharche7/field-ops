@@ -13,6 +13,7 @@ import com.fieldops.repository.AttachmentRepository;
 import com.fieldops.repository.TicketUpdateRepository;
 import com.fieldops.repository.UserRepository;
 import com.fieldops.security.AppUser;
+import com.fieldops.service.storage.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;

@@ -34,13 +34,15 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // CSRF protects cookie-based logins. We send a token header instead, so it isn't needed.
+                // CSRF = another site making a logged-in browser send a request. Our login cookie is
+                // SameSite=Strict, so the browser never sends it on requests started by another site.
+                // That blocks CSRF, so Spring's CSRF tokens aren't needed.
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults()) // uses the CorsConfigurationSource bean from WebConfig
                 // No server-side sessions: every request must bring its own token.
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/logout").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated())
                 // Same ApiError JSON as the rest of the API, instead of Spring's default responses.
