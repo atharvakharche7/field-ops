@@ -29,7 +29,9 @@ export function addUpdate(ticketId: number, data: UpdateRequest, photos: Blob[])
   form.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
   photos.forEach((photo, i) => form.append('photos', photo, `photo_${i + 1}.jpg`))
   // No Content-Type header here: the browser adds "multipart/form-data; boundary=..." itself.
-  return api<Update>(`/api/tickets/${ticketId}/updates`, { method: 'POST', body: form })
+  // Give up after 60 s: on weak signal a request can hang for minutes, and failing lets the update go
+  // into the offline queue instead. If it did reach the server, the same clientUpdateId stops a duplicate.
+  return api<Update>(`/api/tickets/${ticketId}/updates`, { method: 'POST', body: form, signal: AbortSignal.timeout(60_000) })
 }
 
 /** 7. Supervisor creates a ticket. Returns the new ticket with its first history entry. */

@@ -1,12 +1,17 @@
 import { CATEGORY_LABEL, formatDateTime } from '@/lib/format'
-import type { Ticket } from '@/types'
+import type { Status, Ticket } from '@/types'
 import { ChevronRight, MapPin, User } from 'lucide-react'
 import { Link } from 'react-router'
+import { PendingBadge } from './PendingBadge'
 import { PriorityBadge } from './PriorityBadge'
 import { StatusChip } from './StatusChip'
 
-/** One ticket in a list. The whole card is a link, so it's an easy tap target on a phone. */
-export function TicketCard({ ticket, showAssignee }: { ticket: Ticket; showAssignee: boolean }) {
+/**
+ * One ticket in a list. The whole card is a link, so it's an easy tap target on a phone.
+ * pendingStatus: set when an offline update for this ticket hasn't synced yet; it's the status
+ * the ticket will have once it does.
+ */
+export function TicketCard({ ticket, showAssignee, pendingStatus }: { ticket: Ticket; showAssignee: boolean; pendingStatus?: Status }) {
   return (
     <Link
       to={`/tickets/${ticket.id}`}
@@ -26,7 +31,8 @@ export function TicketCard({ ticket, showAssignee }: { ticket: Ticket; showAssig
           </span>
         </p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <StatusChip status={ticket.status} />
+          <StatusChip status={pendingStatus ?? ticket.status} />
+          {pendingStatus && <PendingBadge />}
           {showAssignee && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <User className="size-3.5" aria-hidden />

@@ -19,3 +19,12 @@ export function allowedNextStatuses(current: Status): Status[] {
       return []
   }
 }
+
+/**
+ * The status a ticket will have once its waiting offline updates sync: the last one's
+ * toStatus, or the server's status if nothing is waiting. Pages show this, so a technician
+ * who saved "In progress" offline can go on to "Resolved" before anything has synced.
+ */
+export function effectiveStatus(serverStatus: Status, pendingForTicket: { toStatus: Status }[]): Status {
+  return pendingForTicket.length ? pendingForTicket[pendingForTicket.length - 1].toStatus : serverStatus
+}

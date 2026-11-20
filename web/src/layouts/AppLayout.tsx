@@ -1,4 +1,6 @@
 import { useAuth } from '@/auth/AuthContext'
+import { OfflineBanner } from '@/components/OfflineBanner'
+import { useQueue, useSync } from '@/offline/useSync'
 import type { Role } from '@/types'
 import { cn } from 'cn'
 import { ClipboardList, LayoutDashboard, Plus, RadioTower, UserRound, type LucideIcon } from 'lucide-react'
@@ -36,6 +38,9 @@ export function AppLayout() {
   const { user } = useAuth()
   const items = NAV.filter(item => user && item.roles.includes(user.role))
   const { pathname } = useLocation()
+  // The offline queue's sync runs from here: this layout is on screen whenever someone is logged in.
+  useSync(user?.id)
+  const { pending } = useQueue(user?.id)
 
   return (
     <div className="min-h-svh md:flex">
@@ -67,10 +72,13 @@ export function AppLayout() {
       </aside>
 
       <div className="min-w-0 flex-1">
-        {/* Top bar: phones only */}
-        <header className="sticky top-0 z-10 flex h-14 items-center border-b bg-background/95 px-4 backdrop-blur md:hidden">
-          <Logo />
-        </header>
+        {/* Stays at the top while scrolling: the phone top bar, and the offline banner on every screen size */}
+        <div className="sticky top-0 z-10">
+          <header className="flex h-14 items-center border-b bg-background/95 px-4 backdrop-blur md:hidden">
+            <Logo />
+          </header>
+          {user && <OfflineBanner userId={user.id} pending={pending.length} />}
+        </div>
 
         {/* Extra bottom padding on phones so the tab bar never covers content */}
         <main className="mx-auto w-full max-w-3xl px-4 pt-4 pb-28 md:px-8 md:pt-8 md:pb-12">

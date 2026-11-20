@@ -16,9 +16,23 @@ export class ApiError extends Error {
   }
 }
 
-/** True when the request never reached the server (offline, server down, DNS failure). */
+/**
+ * True when there was no answer at all: no connection, server unreachable, or the request
+ * took too long (slow uploads are given up with a timeout, which throws a TimeoutError).
+ */
 export function isNetworkError(error: unknown): boolean {
-  return error instanceof TypeError
+  return error instanceof TypeError || (error instanceof DOMException && error.name === 'TimeoutError')
+}
+
+/**
+ * True when trying again later could work, so an update should wait in the offline queue:
+ * - no answer at all (see isNetworkError)
+ * - 502, 503 or 504: the proxy (Vite locally, Vercel live) couldn't reach Spring, for example
+ *   while Render's free tier wakes the backend up.
+ * Anything else (400, 403, 404, 500...) is the server's real answer; repeating won't change it.
+ */
+export function isTemporaryError(error: unknown): boolean {
+  return isNetworkError(error) || (error instanceof ApiError && [502, 503, 504].includes(error.status))
 }
 
 // AuthContext registers what to do on a 401. Kept as a plain variable so this file has no React in it.
