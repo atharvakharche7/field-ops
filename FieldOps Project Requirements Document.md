@@ -286,7 +286,7 @@ com.fieldops
 - `JwtAuthFilter` reads `Authorization: Bearer <token>` first and falls back to the `fieldops_token` cookie, so Postman and tests can still use the header.
 - `POST /api/auth/logout` replies with the same cookie set to `Max-Age=0`, which deletes it.
 - Role checks: `/api/auth/login` and `/api/auth/logout` are public; `/api/dashboard/**`, `POST /api/tickets` and `PATCH /api/tickets/*/assign` need SUPERVISOR; everything else needs any logged-in user. Use `@PreAuthorize("hasRole('SUPERVISOR')")` on those methods and enable `@EnableMethodSecurity`.
-- CORS: allow only the site's own origin (`http://localhost:5173` in development, the Vercel URL in production). Vercel passes the browser's `Origin` header through its proxy, so Spring still checks it.
+- CORS: allow only the site's own origin (`http://localhost:5173` for `pnpm dev` and `:4173` for `pnpm preview` in development, the Vercel URL in production). Vercel passes the browser's `Origin` header through its proxy, so Spring still checks it.
 - Secrets (JWT secret, database password, Supabase service key) come from environment variables, or from the git-ignored `backend/.env` locally. Never commit a real secret to GitHub.
 
 **Error format** (every error returns this shape from `GlobalExceptionHandler`)
@@ -323,7 +323,7 @@ spring.servlet.multipart.max-request-size=20MB
 app.jwt.secret=${JWT_SECRET:change-this-to-a-long-random-string-of-32-plus-chars}
 app.jwt.expiration-ms=86400000
 app.cookie.secure=${COOKIE_SECURE:false}
-app.cors.allowed-origins=${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+app.cors.allowed-origins=${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173}
 
 app.storage.type=${STORAGE_TYPE:local}
 app.upload-dir=uploads
@@ -541,7 +541,8 @@ pnpm add react-router @tanstack/react-query @tanstack/react-query-persist-client
 pnpm add -D tailwindcss @tailwindcss/vite vite-plugin-pwa @types/node
 pnpm dlx shadcn@latest init
 pnpm dlx shadcn@latest add button card badge input textarea select label tabs dialog skeleton sonner
-pnpm add -D vitest jsdom fake-indexeddb @testing-library/react @testing-library/jest-dom @playwright/test
+pnpm add -D -E vitest@5.1.0 fake-indexeddb@6.2.7   # exact versions at least two weeks old (supply-chain safety)
+pnpm add -D @playwright/test
 pnpm exec playwright install chromium
 ```
 
@@ -594,14 +595,16 @@ web/
     │   ├── AuthContext.tsx      // user, login(), logout(); last user cached for offline start
     │   └── guards.tsx           // RequireAuth, RequireRole, HomeRedirect
     ├── offline/
-    │   ├── queue.ts             // add(), getAll(), remove(), count() using IndexedDB
-    │   └── useSync.ts           // listens to online/visibility events, flushes the queue
+    │   ├── queue.ts             // add(), getAll(), remove(), count(), failed list, subscribe(); IndexedDB
+    │   ├── useSync.ts           // flushQueue(), syncAndRefresh(); hooks useSync, useQueue, useOnline
+    │   └── *.test.ts            // Vitest tests for the queue and the sync rules
     ├── lib/
     │   ├── geo.ts               // getCoords(): GPS with timeout, null on failure
     │   ├── photos.ts            // resizePhoto(): shrink camera photos before upload
     │   ├── status.ts            // allowedNextStatuses(), mirrors Status.canMoveTo
     │   ├── format.ts            // labels for enums, date format, Google Maps links
     │   ├── errors.ts            // errorMessage(): any error → a sentence for the user
+    │   ├── queryClient.ts       // the QueryClient, plus the IndexedDB persister for offline start
     │   └── utils.ts             // shadcn's cn() helper; newUuid() (works on plain http too)
     ├── layouts/
     │   └── AppLayout.tsx        // bottom nav on phones, sidebar on md+ screens; OfflineBanner
@@ -618,6 +621,8 @@ web/
     │   ├── TicketCard.tsx  PriorityBadge.tsx  StatusChip.tsx  StatCard.tsx
     │   ├── AssignDialog.tsx     // supervisor: Assign / Reassign on Ticket Detail
     │   ├── OfflineBanner.tsx    // "You're offline · 2 updates waiting to sync"
+    │   ├── PendingBadge.tsx     // "Pending sync" label on cards, ticket headers and the timeline
+    │   ├── StaleNotice.tsx      // "Showing what was saved on this device at …"
     │   └── PhotoPicker.tsx  EmptyState.tsx  ErrorState.tsx
     └── types/index.ts           // Ticket, TicketDetail, Update, User, enums
 ```
@@ -813,26 +818,31 @@ The service worker caches only the app shell, never `/api` responses. There is e
 ```ts
 type QueuedUpdate = {
   clientUpdateId: string;     // crypto.randomUUID(), created when the user taps Save
+  userId: number;             // whose update it is: only sent with that user's login
   ticketId: number;
+  ticketNo: string;           // ticketNo, ticketTitle, fromStatus: to show it on Profile offline
+  ticketTitle: string;
+  fromStatus: Status;
   toStatus: 'IN_PROGRESS' | 'RESOLVED';
   note: string;
   latitude?: number;
   longitude?: number;
   deviceTime: string;         // ISO time on the phone when Save was tapped
   photos: Blob[];             // resized JPEGs; IndexedDB stores Blobs directly
+  queuedAt: number;
   attempts: number;
   lastError?: string;
 };
 ```
 
-The photos themselves are stored in IndexedDB, not just a link to them, so they can't disappear before the update syncs.
+The photos themselves are stored in IndexedDB, not just a link to them, so they can't disappear before the update syncs. Rejected items move to a second list, `fieldops.failed`, with the server's reason.
 
 **When the user taps Save**
 
 1. Build the update and give it a new `clientUpdateId`.
 2. Try sending it. Don't trust `navigator.onLine` alone: a phone can be "connected" to Wi-Fi with no internet. A failed `fetch` is the real signal.
-3. If the request succeeds (200 or 201), refresh the ticket and go back.
-4. If it fails with a network error, or with 502, 503 or 504 (the proxy, Vite or Vercel, couldn't reach the backend, for example while Render wakes up), add it to the queue. Show the toast "Saved offline. Will sync when you're back online", and show the ticket with its new status and a small "Pending sync" label.
+3. If the request succeeds (200 or 201), refresh the ticket and go back. If the ticket already has updates waiting in the queue, skip sending and queue this one behind them; otherwise it would reach the server first and the older ones would be rejected as going backwards.
+4. If it fails with a network error (including a 60-second timeout on the upload), or with 502, 503 or 504 (the proxy, Vite or Vercel, couldn't reach the backend, for example while Render wakes up), add it to the queue. Show the toast "Saved offline. Will sync when you're back online", and show the ticket with its new status and a small "Pending sync" label.
 5. If the server returns 400, 403 or 404, do **not** queue it. Show the error message, because retrying won't fix it.
 6. If the server returns 401 (login expired), queue it and send the user to login. It syncs after they log back in.
 
@@ -841,7 +851,8 @@ The photos themselves are stored in IndexedDB, not just a link to them, so they 
 - When the app starts with a logged-in user.
 - When the browser fires the `online` event.
 - When the tab becomes visible again (`visibilitychange`), for example when the technician switches back to FieldOps.
-- When the user taps **Sync now** on the Profile page.
+- When the user taps **Sync now** on the Profile page or in the banner.
+- Every 30 seconds while something is waiting and the tab is visible. A sleeping backend (502/503) fires no `online` event, so this is what retries it.
 
 **How the sync works**
 
@@ -850,8 +861,17 @@ The photos themselves are stored in IndexedDB, not just a link to them, so they 
 3. 200 or 201 → remove the item from the queue.
 4. Network error, 502, 503 or 504 → stop the loop and try again next time; keep the rest of the queue as it is.
 5. 401 → stop the loop, keep the queue, and send the user to login.
-6. 400, 403 or 404 → remove the item, keep it in a separate `fieldops.failed` list, and show it on the Profile page so the user knows it didn't go through. Example: the supervisor reassigned the ticket while the technician was offline.
-7. After the loop, invalidate the ticket queries so lists refresh.
+6. Any other error (400, 403, 404, 500…) → remove the item, keep it in a separate `fieldops.failed` list, and show it on the Profile page with the server's reason so the user knows it didn't go through. Example: the supervisor reassigned the ticket while the technician was offline. Each failed item has **Try again** (back into the queue with the same `clientUpdateId`, for when the reason has gone away) and **Discard**.
+7. After the loop, invalidate the ticket queries so lists refresh, and show a toast: "2 offline updates synced" or "1 update wasn't accepted by the server".
+
+Until an update syncs, pages show the ticket with the status it will have (the last waiting update's `toStatus`) and a "Pending sync" label, and the timeline shows the waiting update with its photos read from IndexedDB. So a technician can mark a ticket In Progress and then Resolved, both offline.
+
+**Saved data for offline start.** Two details matter here:
+
+- **Save any query that has data, not just successful ones.** By default only queries whose last fetch succeeded are saved, so a ticket whose refresh failed offline would be dropped from the saved copy when it's needed most. Skip queries whose last error was a 403/404.
+- **Tell TanStack Query the real connection state on start.** It assumes "online" when the page loads. Call `onlineManager.setOnline(navigator.onLine)` on start, so after an offline reload queries wait instead of failing.
+
+Pages show saved data first, with a "Showing what was saved on this device at …" line.
 
 **Logging out with pending updates:** warn "You have 2 updates waiting to sync. Logging out will delete them." If the user confirms, clear the queue, the failed list, the query cache and the cached user. This stops one technician's updates from being sent under another technician's login on a shared phone.
 
@@ -948,12 +968,12 @@ Plan on 5–6 focused hours a day. Each day ends with a "done when" check; don't
 
 * Done when: you resolve a ticket with 2 photos as tech1, then log in as supervisor and see the photos in the timeline and the counts change on the dashboard.
 
-**Day 6: offline and PWA**
+**Day 6: offline and PWA** ✅
 
-- [ ] `vite-plugin-pwa` with manifest and icons
-- [ ] `queue.ts` and `useSync`; `OfflineBanner` with pending count; "Pending sync" labels; failed list and Sync now on Profile
-- [ ] Persist the query cache to IndexedDB; cached user for offline start
-- [ ] Vitest tests for `queue.ts`, `useSync` and `status.ts`
+- [x] `vite-plugin-pwa` with manifest and icons
+- [x] `queue.ts` and `useSync`; `OfflineBanner` with pending count; "Pending sync" labels; failed list and Sync now on Profile
+- [x] Persist the query cache to IndexedDB; cached user for offline start
+- [x] Vitest tests for `queue.ts`, `useSync` and `status.ts`
 
 * Done when: with `pnpm build && pnpm preview`, the DevTools-offline demo works three times in a row, including reloading the page while offline.
 
@@ -991,9 +1011,9 @@ Run through the manual list on Day 7 on a real phone and a laptop. The automated
 
 **Frontend unit tests (Vitest, with `fake-indexeddb` standing in for the browser's IndexedDB)**
 
-- [ ] `queue.ts`: add, read back in oldest-first order, remove, count
-- [ ] `useSync`: removes items on 200/201, stops on a network error, moves 400/403/404 to the failed list, stops on 401
-- [ ] `allowedNextStatuses`: matches the backend rules
+- [x] `queue.ts`: add, read back in oldest-first order, remove, count
+- [x] `useSync`: removes items on 200/201, stops on a network error, moves 400/403/404 to the failed list, stops on 401
+- [x] `allowedNextStatuses`: matches the backend rules
 
 **End-to-end tests (Playwright, against the local backend and `pnpm preview`)**
 

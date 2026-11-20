@@ -11,3 +11,12 @@ export function errorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message
   return 'Something went wrong.'
 }
+
+/**
+ * Should a page show its saved data instead of an error? Yes for "no connection" or a server
+ * error (the saved copy is the best we have), but not for 403/404: those mean the user may no
+ * longer see it, so the saved copy would be wrong to show.
+ */
+export function canShowSaved(data: unknown, error: unknown): boolean {
+  return data !== undefined && !(error instanceof ApiError && error.status >= 400 && error.status < 500)
+}

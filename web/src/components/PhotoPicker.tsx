@@ -51,7 +51,7 @@ export function PhotoPicker({
         <ul className="grid grid-cols-3 gap-2 sm:grid-cols-5">
           {photos.map((photo, i) => (
             <li key={i} className="relative">
-              <Thumbnail blob={photo} alt={`Photo ${i + 1}`} />
+              <BlobImage blob={photo} alt={`Photo ${i + 1}`} />
               <button
                 type="button"
                 onClick={() => onChange(photos.filter((_, j) => j !== i))}
@@ -89,8 +89,8 @@ export function PhotoPicker({
   )
 }
 
-/** Shows a Blob that only exists in memory, through a temporary blob: URL. */
-function Thumbnail({ blob, alt }: { blob: Blob; alt: string }) {
+/** Shows a Blob that only exists in memory, through a temporary blob: URL. Also used for photos waiting in the offline queue. */
+export function BlobImage({ blob, alt }: { blob: Blob; alt: string }) {
   const img = useRef<HTMLImageElement>(null)
   useEffect(() => {
     const url = URL.createObjectURL(blob)

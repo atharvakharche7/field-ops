@@ -1,5 +1,7 @@
 import * as authApi from '@/api/auth'
 import { ApiError, setUnauthorizedHandler } from '@/api/client'
+import { persister } from '@/lib/queryClient'
+import { clearForUser } from '@/offline/queue'
 import type { User } from '@/types'
 import { useQueryClient } from '@tanstack/react-query'
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
@@ -8,7 +10,7 @@ import { createContext, use, useCallback, useEffect, useMemo, useState, type Rea
  * Who is logged in, shared with every page.
  * The token itself is in an httpOnly cookie that JavaScript can't see, so we never store it.
  * We only keep the user's name and role, and a copy in localStorage so the app can still
- * open without internet (the offline part is finished on Day 6).
+ * open without internet.
  */
 
 const CACHED_USER_KEY = 'fieldops.user'
@@ -46,11 +48,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Forget everything about the current user: state, cached copy and all fetched data.
+  // Forget the current user: state, cached copy, all fetched data and its saved copy in IndexedDB.
+  // The offline queue is NOT cleared here: after a 401 (login expired) it syncs once they log back in.
   const clearSession = useCallback(() => {
     setUser(null)
     saveCachedUser(null)
     queryClient.clear()
+    void persister.removeClient()
   }, [queryClient])
 
   // Any 401 from any API call means the cookie expired or is gone: back to login.
@@ -86,19 +90,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const u = await authApi.login(email, password)
+    // Drop any data still in memory from whoever used this browser before (on a shared phone,
+    // the cache saved on the device may have been loaded at start-up), so nobody sees someone else's tickets.
+    queryClient.clear()
     setUser(u)
     saveCachedUser(u)
+    // Ask the browser not to delete our stored data (queue, cache) when space runs low.
+    // Browsers may say no, and older ones don't have it; either way the app still works.
+    void navigator.storage?.persist?.().catch(() => {})
     return u
-  }, [])
+  }, [queryClient])
 
+  // Logging out on purpose also deletes this user's waiting and failed updates, so they can't be
+  // sent later under someone else's login. The Profile page warns before this happens.
   const logout = useCallback(async () => {
+    if (user) await clearForUser(user.id)
     try {
       await authApi.logout()
     } catch {
       // Offline or server down: still log out on this device.
     }
     clearSession()
-  }, [clearSession])
+  }, [clearSession, user])
 
   const value = useMemo(() => ({ user, loading, login, logout }), [user, loading, login, logout])
   return <AuthContext value={value}>{children}</AuthContext>

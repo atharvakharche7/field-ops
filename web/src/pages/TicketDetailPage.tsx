@@ -3,13 +3,19 @@ import { useAuth } from '@/auth/AuthContext'
 import { AssignDialog } from '@/components/AssignDialog'
 import { getTicket } from '@/api/tickets'
 import { ErrorState } from '@/components/ErrorState'
+import { PendingBadge } from '@/components/PendingBadge'
+import { BlobImage } from '@/components/PhotoPicker'
 import { PriorityBadge } from '@/components/PriorityBadge'
+import { StaleNotice } from '@/components/StaleNotice'
+import { canShowSaved } from '@/lib/errors'
 import { StatusChip } from '@/components/StatusChip'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CATEGORY_LABEL, STATUS_LABEL, directionsUrl, formatDateTime, pinUrl } from '@/lib/format'
-import { allowedNextStatuses } from '@/lib/status'
+import { allowedNextStatuses, effectiveStatus } from '@/lib/status'
+import type { QueuedUpdate } from '@/offline/queue'
+import { useQueue } from '@/offline/useSync'
 import type { TicketDetail, Update } from '@/types'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ArrowRight, MapPin, Navigation, SquarePen } from 'lucide-react'
@@ -21,7 +27,7 @@ export function TicketDetailPage() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  const { data, error, isPending, refetch } = useQuery({
+  const { data, error, isPending, isPaused, dataUpdatedAt, refetch } = useQuery({
     queryKey: ['ticket', id],
     queryFn: () => getTicket(id),
     enabled: Number.isInteger(id), // don't call the API for /tickets/abc
@@ -38,12 +44,19 @@ export function TicketDetailPage() {
 
       {!Number.isInteger(id) ? (
         <ErrorState error={new ApiError(404, 'Ticket not found')} />
-      ) : isPending ? (
-        <DetailSkeleton />
+      ) : data && canShowSaved(data, error) ? (
+        // Saved data first: offline (or with the server down) the last copy is still useful.
+        <>
+          {(error || isPaused) && <StaleNotice updatedAt={dataUpdatedAt} />}
+          <TicketDetailView ticket={data} />
+        </>
       ) : error ? (
         <ErrorState error={error} onRetry={() => refetch()} />
+      ) : isPaused ? (
+        // Offline and this ticket was never opened on this device, so there's nothing saved to show.
+        <ErrorState error={new TypeError('offline')} onRetry={() => refetch()} />
       ) : (
-        <TicketDetailView ticket={data} />
+        isPending && <DetailSkeleton />
       )}
     </div>
   )
@@ -53,8 +66,12 @@ function TicketDetailView({ ticket }: { ticket: TicketDetail }) {
   const { user } = useAuth()
   // Newest first: the latest work is what a technician or supervisor looks for. Same time → later id first.
   const updates = [...ticket.updates].sort((a, b) => b.deviceTime.localeCompare(a.deviceTime) || b.id - a.id)
+  // This technician's updates for the ticket that are saved on the device but not sent yet.
+  const { pending } = useQueue(user?.id)
+  const waiting = pending.filter(p => p.ticketId === ticket.id)
+  const status = effectiveStatus(ticket.status, waiting)
   // Technicians can update their own unfinished tickets; supervisors can (re)assign anything not resolved.
-  const canUpdate = user?.role === 'TECHNICIAN' && ticket.assignedTo?.id === user.id && allowedNextStatuses(ticket.status).length > 0
+  const canUpdate = user?.role === 'TECHNICIAN' && ticket.assignedTo?.id === user.id && allowedNextStatuses(status).length > 0
   const canAssign = user?.role === 'SUPERVISOR' && ticket.status !== 'RESOLVED'
 
   return (
@@ -63,7 +80,8 @@ function TicketDetailView({ ticket }: { ticket: TicketDetail }) {
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-sm text-muted-foreground">{ticket.ticketNo}</span>
           <PriorityBadge priority={ticket.priority} />
-          <StatusChip status={ticket.status} />
+          <StatusChip status={status} />
+          {waiting.length > 0 && <PendingBadge />}
         </div>
         <h1 className="text-2xl leading-tight font-semibold tracking-tight">{ticket.title}</h1>
         <p className="text-sm text-muted-foreground">{CATEGORY_LABEL[ticket.category]}</p>
@@ -110,6 +128,9 @@ function TicketDetailView({ ticket }: { ticket: TicketDetail }) {
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">History</h2>
         <ol className="relative flex flex-col gap-6 border-l pl-6">
+          {[...waiting].reverse().map(p => (
+            <PendingItem key={p.clientUpdateId} update={p} />
+          ))}
           {updates.map(u => (
             <TimelineItem key={u.id} update={u} />
           ))}
@@ -121,6 +142,31 @@ function TicketDetailView({ ticket }: { ticket: TicketDetail }) {
         </ol>
       </section>
     </>
+  )
+}
+
+/** An update saved on this device, not on the server yet. Its photos come from IndexedDB, not from a URL. */
+function PendingItem({ update }: { update: QueuedUpdate }) {
+  return (
+    <li className="relative">
+      <span className="absolute top-1.5 -left-[29px] size-2.5 rounded-full bg-amber-500 ring-4 ring-background" aria-hidden />
+      <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+        {STATUS_LABEL[update.fromStatus]} <ArrowRight className="size-3.5" aria-label="to" /> {STATUS_LABEL[update.toStatus]}
+        <PendingBadge className="ml-1" />
+      </p>
+      <p className="text-xs text-muted-foreground">
+        You · {formatDateTime(update.deviceTime)}
+        {update.latitude != null && ' · Location captured'}
+      </p>
+      {update.note && <p className="mt-2 text-sm leading-relaxed">{update.note}</p>}
+      {update.photos.length > 0 && (
+        <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {update.photos.map((photo, i) => (
+            <BlobImage key={i} blob={photo} alt="Photo waiting to sync" />
+          ))}
+        </div>
+      )}
+    </li>
   )
 }
 

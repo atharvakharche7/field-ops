@@ -29,3 +29,16 @@ only talks to one address and the httpOnly login cookie works without extra CORS
 | `pnpm build` | Type-check, then build the production files into `dist/` |
 | `pnpm preview` | Serve the `dist/` build locally (also forwards `/api`) |
 | `pnpm lint` | Check the code with oxlint |
+| `pnpm test` | Unit tests (Vitest): offline queue, sync rules, status rules |
+
+## Trying offline mode
+
+The service worker only runs in a production build, so offline mode doesn't work in `pnpm dev`.
+
+1. Run `pnpm build && pnpm preview` and open http://localhost:4173.
+2. Log in as a technician and open a ticket or two, so they're saved on the device.
+3. In Chrome DevTools, go to Network and choose **Offline**. Reload: the app still opens with your tickets.
+4. Update a ticket. It shows **Pending sync**, and the banner counts it.
+5. Switch back to **No throttling**. The update syncs within a few seconds.
+
+Saved updates live in IndexedDB (DevTools → Application → IndexedDB → keyval-store).

@@ -2,12 +2,16 @@ import { getTickets } from '@/api/tickets'
 import { useAuth } from '@/auth/AuthContext'
 import { EmptyState } from '@/components/EmptyState'
 import { PriorityBadge } from '@/components/PriorityBadge'
+import { StaleNotice } from '@/components/StaleNotice'
+import { canShowSaved } from '@/lib/errors'
 import { ErrorState } from '@/components/ErrorState'
 import { TicketCard } from '@/components/TicketCard'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PRIORITY_LABEL, STATUS_LABEL } from '@/lib/format'
+import { effectiveStatus } from '@/lib/status'
+import { useQueue } from '@/offline/useSync'
 import type { Priority, Status } from '@/types'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from 'cn'
@@ -46,10 +50,12 @@ export function TicketsPage() {
     setSearchParams(next, { replace: true })
   }
 
-  const { data, error, isPending, isFetching, refetch } = useQuery({
+  const { data, error, isPending, isPaused, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: ['tickets', { status, priority }],
     queryFn: () => getTickets({ status, priority }),
   })
+  // Updates saved offline and not sent yet, so their cards can say "Pending sync".
+  const { pending } = useQueue(user?.id)
 
   return (
     <div className="flex flex-col gap-4">
@@ -99,11 +105,17 @@ export function TicketsPage() {
         </div>
       )}
 
-      {isPending ? (
-        <TicketListSkeleton />
-      ) : error ? (
+      {/* Saved data first: offline, the list from the last visit is still useful */}
+      {data && canShowSaved(data, error) && (error || isPaused) && <StaleNotice updatedAt={dataUpdatedAt} />}
+      {data && canShowSaved(data, error) ? null : error ? (
         <ErrorState error={error} onRetry={() => refetch()} />
-      ) : data.content.length === 0 ? (
+      ) : isPaused ? (
+        // Offline, and this filter was never loaded on this device.
+        <ErrorState error={new TypeError('offline')} onRetry={() => refetch()} />
+      ) : (
+        isPending && <TicketListSkeleton />
+      )}
+      {!data || !canShowSaved(data, error) ? null : data.content.length === 0 ? (
         <EmptyState
           title={
             status || priority
@@ -118,13 +130,22 @@ export function TicketsPage() {
         <ul className="flex flex-col gap-3">
           {data.content.map(ticket => (
             <li key={ticket.id}>
-              <TicketCard ticket={ticket} showAssignee={isSupervisor} />
+              <TicketCard
+                ticket={ticket}
+                showAssignee={isSupervisor}
+                pendingStatus={pendingStatusFor(ticket.id, ticket.status)}
+              />
             </li>
           ))}
         </ul>
       )}
     </div>
   )
+
+  function pendingStatusFor(ticketId: number, serverStatus: Status): Status | undefined {
+    const waiting = pending.filter(p => p.ticketId === ticketId)
+    return waiting.length ? effectiveStatus(serverStatus, waiting) : undefined
+  }
 }
 
 function TicketListSkeleton() {

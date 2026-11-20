@@ -11,7 +11,7 @@ import java.util.List;
 
 /**
  * CORS: the browser rule that decides which other websites may call this API.
- * Only our own site is allowed: http://localhost:5173 in development, the Vercel URL in production.
+ * Only our own site is allowed: http://localhost:5173 (pnpm dev) and :4173 (pnpm preview) in development, the Vercel URL in production.
  * Vite (locally) and Vercel (in production) forward /api to this server but keep the
  * browser's Origin header, so Spring still checks it against this list.
  */

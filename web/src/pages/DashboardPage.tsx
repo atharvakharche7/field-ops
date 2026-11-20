@@ -1,6 +1,8 @@
 import { getSummary } from '@/api/dashboard'
 import { ErrorState } from '@/components/ErrorState'
 import { PriorityBadge } from '@/components/PriorityBadge'
+import { StaleNotice } from '@/components/StaleNotice'
+import { canShowSaved } from '@/lib/errors'
 import { StatCard } from '@/components/StatCard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,7 +17,7 @@ const PRIORITIES: Priority[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
 
 /** Supervisor home page: how much work is open, and who is carrying it. */
 export function DashboardPage() {
-  const { data, error, isPending, isFetching, refetch } = useQuery({
+  const { data, error, isPending, isPaused, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: ['dashboard'],
     queryFn: getSummary,
     refetchInterval: 60_000, // keep the numbers fresh while the page is open (paused when the tab is hidden)
@@ -42,7 +44,18 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {isPending ? <DashboardSkeleton /> : error ? <ErrorState error={error} onRetry={() => refetch()} /> : <DashboardView summary={data} />}
+      {data && canShowSaved(data, error) ? (
+        <>
+          {(error || isPaused) && <StaleNotice updatedAt={dataUpdatedAt} />}
+          <DashboardView summary={data} />
+        </>
+      ) : error ? (
+        <ErrorState error={error} onRetry={() => refetch()} />
+      ) : isPaused ? (
+        <ErrorState error={new TypeError('offline')} onRetry={() => refetch()} />
+      ) : (
+        isPending && <DashboardSkeleton />
+      )}
     </div>
   )
 }

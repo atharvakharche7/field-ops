@@ -1,8 +1,9 @@
-import { ApiError, isNetworkError } from '@/api/client'
+import { ApiError, isTemporaryError } from '@/api/client'
 import { addUpdate, getTicket } from '@/api/tickets'
 import { useAuth } from '@/auth/AuthContext'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
+import { PendingBadge } from '@/components/PendingBadge'
 import { PhotoPicker } from '@/components/PhotoPicker'
 import { StatusChip } from '@/components/StatusChip'
 import { Button } from '@/components/ui/button'
@@ -12,9 +13,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { errorMessage } from '@/lib/errors'
 import { STATUS_LABEL, localDateTime } from '@/lib/format'
 import { getCoords, type Coords } from '@/lib/geo'
-import { allowedNextStatuses } from '@/lib/status'
+import { allowedNextStatuses, effectiveStatus } from '@/lib/status'
 import { cn, newUuid } from '@/lib/utils'
-import type { Status, TicketDetail } from '@/types'
+import { add as addToQueue } from '@/offline/queue'
+import { syncAndRefresh, useQueue } from '@/offline/useSync'
+import type { Status, TicketDetail, UpdateRequest } from '@/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Check, LoaderCircle, MapPin, MapPinOff } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
@@ -30,24 +33,32 @@ export function UpdateTicketPage() {
   const location = useLocation()
   const { user } = useAuth()
 
-  const { data, error, isPending, refetch } = useQuery({
+  const { data, error, isPending, isPaused, refetch } = useQuery({
     queryKey: ['ticket', id],
     queryFn: () => getTicket(id),
     enabled: Number.isInteger(id),
   })
+  // Updates for this ticket saved offline and not sent yet. The form starts from the status
+  // the ticket will have once they're sent.
+  const { pending } = useQueue(user?.id)
+  const waiting = pending.filter(p => p.ticketId === id)
+  const status = data && effectiveStatus(data.status, waiting)
 
   // Back to the ticket we came from. If this page was opened directly, go to that ticket.
   const goBack = () => (location.key === 'default' ? navigate(`/tickets/${id}`, { replace: true }) : navigate(-1))
 
+  // Saved data comes first: offline, the ticket from the last visit is enough to fill in an update.
   let body
   if (!Number.isInteger(id)) body = <ErrorState error={new ApiError(404, 'Ticket not found')} />
+  else if (data && status && user) {
+    if (data.assignedTo?.id !== user.id) body = <ErrorState error={new ApiError(403, 'This ticket is no longer assigned to you.')} />
+    else if (allowedNextStatuses(status).length === 0)
+      body = <EmptyState title="Nothing left to update" description={`This ticket is ${STATUS_LABEL[status].toLowerCase()}.`} />
+    // key: start a fresh form if the status changes underneath us (a refetch, or an offline update syncing)
+    else body = <UpdateForm key={status} ticket={data} currentStatus={status} waiting={waiting.length} userId={user.id} onDone={goBack} />
+  } else if (error) body = <ErrorState error={error} onRetry={() => refetch()} />
+  else if (isPaused) body = <ErrorState error={new TypeError('offline')} onRetry={() => refetch()} />
   else if (isPending) body = <FormSkeleton />
-  else if (error) body = <ErrorState error={error} onRetry={() => refetch()} />
-  else if (data.assignedTo?.id !== user?.id) body = <ErrorState error={new ApiError(403, 'This ticket is no longer assigned to you.')} />
-  else if (allowedNextStatuses(data.status).length === 0)
-    body = <EmptyState title="Nothing left to update" description={`This ticket is ${STATUS_LABEL[data.status].toLowerCase()}.`} />
-  // key: start a fresh form if the ticket's status changes underneath us (for example after a refetch)
-  else body = <UpdateForm key={data.status} ticket={data} onDone={goBack} />
 
   return (
     <div className="flex flex-col gap-4">
@@ -57,7 +68,8 @@ export function UpdateTicketPage() {
       {data && (
         <header className="flex flex-col gap-1">
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="font-mono">{data.ticketNo}</span> · currently <StatusChip status={data.status} />
+            <span className="font-mono">{data.ticketNo}</span> · currently <StatusChip status={status ?? data.status} />
+            {waiting.length > 0 && <PendingBadge />}
           </p>
           <h1 className="text-2xl leading-tight font-semibold tracking-tight">Update ticket</h1>
           <p className="text-muted-foreground">{data.title}</p>
@@ -70,9 +82,21 @@ export function UpdateTicketPage() {
 
 type GeoState = { state: 'locating' } | { state: 'found'; coords: Coords } | { state: 'unavailable' }
 
-function UpdateForm({ ticket, onDone }: { ticket: TicketDetail; onDone: () => void }) {
+function UpdateForm({
+  ticket,
+  currentStatus,
+  waiting,
+  userId,
+  onDone,
+}: {
+  ticket: TicketDetail
+  currentStatus: Status // the server's status, or what it will be after this ticket's waiting updates sync
+  waiting: number // how many updates for this ticket are already in the offline queue
+  userId: number
+  onDone: () => void
+}) {
   const queryClient = useQueryClient()
-  const choices = allowedNextStatuses(ticket.status)
+  const choices = allowedNextStatuses(currentStatus)
   const [toStatus, setToStatus] = useState<Status>(choices[0])
   const [note, setNote] = useState('')
   const [photos, setPhotos] = useState<Blob[]>([])
@@ -107,45 +131,83 @@ function UpdateForm({ ticket, onDone }: { ticket: TicketDetail; onDone: () => vo
   // A ref changes instantly, unlike state, so two quick taps can't both get through.
   const saving = useRef(false)
 
+  /**
+   * Save follows the flow in the requirements doc:
+   *   sent (200/201)            → done
+   *   no connection, 502-504    → keep it in the offline queue, sync later
+   *   401 (login expired)       → keep it in the queue; it syncs after logging back in
+   *   400/403/404               → show the server's reason; queueing wouldn't help
+   */
   const mutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<'sent' | 'queued' | 'queued-behind' | 'queued-login'> => {
       // Wait for the location a little longer if it's still coming, but never block the save on it.
       const coords = await Promise.race([geoPromise.current, wait(3000).then(() => null)])
       clientUpdateId.current ??= newUuid()
-      return addUpdate(
-        ticket.id,
-        {
-          clientUpdateId: clientUpdateId.current,
-          toStatus,
-          note: note.trim(),
-          ...(coords ?? {}),
-          deviceTime: localDateTime(),
-        },
-        photos,
-      )
+      const data: UpdateRequest = {
+        clientUpdateId: clientUpdateId.current,
+        toStatus,
+        note: note.trim(),
+        ...(coords ?? {}),
+        deviceTime: localDateTime(),
+      }
+      const queueIt = (lastError?: string) =>
+        addToQueue({
+          ...data,
+          userId,
+          ticketId: ticket.id,
+          ticketNo: ticket.ticketNo,
+          ticketTitle: ticket.title,
+          fromStatus: currentStatus,
+          photos,
+          queuedAt: Date.now(),
+          attempts: 0,
+          lastError,
+        })
+
+      // Earlier updates for this ticket are still waiting: this one goes behind them, or it would
+      // reach the server first and the older ones would then be rejected as going backwards.
+      if (waiting > 0) {
+        await queueIt()
+        return 'queued-behind'
+      }
+      try {
+        await addUpdate(ticket.id, data, photos)
+        return 'sent'
+      } catch (err) {
+        if (isTemporaryError(err)) {
+          await queueIt(errorMessage(err))
+          return 'queued'
+        }
+        if (err instanceof ApiError && err.status === 401) {
+          // AuthContext is already showing the login page. Keep the work; it syncs after login.
+          await queueIt('Login expired')
+          return 'queued-login'
+        }
+        throw err // 400/403/404: handled in onError below
+      }
     },
-    onSuccess: () => {
-      // The list, this ticket and the dashboard all show this ticket's status, so refresh them all.
-      queryClient.invalidateQueries({ queryKey: ['tickets'] })
-      queryClient.invalidateQueries({ queryKey: ['ticket', ticket.id] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      toast.success(toStatus === 'RESOLVED' ? `${ticket.ticketNo} resolved` : 'Update saved')
-      onDone()
+    onSuccess: result => {
+      if (result === 'sent') {
+        // The list, this ticket and the dashboard all show this ticket's status, so refresh them all.
+        queryClient.invalidateQueries({ queryKey: ['tickets'] })
+        queryClient.invalidateQueries({ queryKey: ['ticket', ticket.id] })
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+        toast.success(toStatus === 'RESOLVED' ? `${ticket.ticketNo} resolved` : 'Update saved')
+      } else if (result === 'queued-behind') {
+        toast.info('Saved. It will be sent after the earlier updates for this ticket.')
+        void syncAndRefresh(userId, { quiet: true }) // maybe the connection is back: try right away
+      } else if (result === 'queued-login') {
+        toast.info('Saved on this device. Log in again and it will sync.')
+      } else {
+        toast.info("Saved offline. Will sync when you're back online.")
+      }
+      if (result !== 'queued-login') onDone()
     },
     onError: err => {
-      if (isNetworkError(err) || (err instanceof ApiError && err.status >= 500)) {
-        // Day 6 puts these in the offline queue instead. For now the form keeps everything, so Save can be tapped again.
-        // We can't know if the server got it (the reply may be what was lost), so don't claim either way.
-        // Tapping Save again is safe: the same clientUpdateId means the server won't save it twice.
-        setFormError("Couldn't confirm the update was saved. Check your connection and tap Save again; it won't be saved twice.")
-      } else if (err instanceof ApiError && err.status === 401) {
-        // The login expired: AuthContext already sends the user to the login page.
-      } else {
-        // 400/403/404: the server said no, and retrying won't change that. Show why,
-        // and reload the ticket in case its status changed (for example, someone else resolved it).
-        setFormError(errorMessage(err))
-        queryClient.invalidateQueries({ queryKey: ['ticket', ticket.id] })
-      }
+      // 400/403/404: the server said no, and retrying won't change that. Show why,
+      // and reload the ticket in case its status changed (for example, someone else resolved it).
+      setFormError(errorMessage(err))
+      queryClient.invalidateQueries({ queryKey: ['ticket', ticket.id] })
     },
     onSettled: () => {
       saving.current = false
