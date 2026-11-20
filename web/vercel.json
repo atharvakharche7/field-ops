@@ -1,0 +1,7 @@
+{
+    "rewrites": [
+      { "source": "/api/:path*", "destination": "https://fieldops-api-n48v.onrender.com/api/:path*" },
+      { "source": "/(.*)", "destination": "/index.html" }
+    ]
+  }
+  
