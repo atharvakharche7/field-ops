@@ -979,11 +979,13 @@ Plan on 5–6 focused hours a day. Each day ends with a "done when" check; don't
 
 **Day 7: deploy and ship**
 
-- [ ] Deploy: Supabase, Render, Vercel (see Deployment)
+- [x] Deploy: Supabase, Render, Vercel (see Deployment). Live at https://field-ops-ak.vercel.app
 - [ ] Test on your phone: install the PWA, camera, GPS, airplane-mode sync
-- [ ] 2–3 Playwright tests
-- [ ] Take 6–8 screenshots (phone and desktop) and record a 60–90 second demo video
-- [ ] Write the README; add the project to your resume and LinkedIn
+- [x] 2–3 Playwright tests (`web/e2e/`, run with `pnpm test:e2e`)
+- [x] Take 6–8 screenshots (phone and desktop): `docs/screenshots/`
+- [ ] Record a 60–90 second demo video
+- [x] Write the README
+- [ ] Add the project to your resume and LinkedIn
 
 * Done when: someone else can open your live link, log in with a test account and watch your video without asking you anything.
 
@@ -1019,9 +1021,9 @@ Run through the manual list on Day 7 on a real phone and a laptop. The automated
 
 Each test creates its own ticket through the API as the supervisor first, so tests don't depend on seed data left over from earlier runs.
 
-- [ ] Technician logs in and sees only their own tickets
-- [ ] Technician moves a ticket to In Progress with a note; it appears in the timeline
-- [ ] Offline sync: `context.setOffline(true)` → save → banner shows 1 pending → `context.setOffline(false)` → the update reaches the server
+- [x] Technician logs in and sees only their own tickets
+- [x] Technician moves a ticket to In Progress with a note; it appears in the timeline
+- [x] Offline sync: `context.setOffline(true)` → save → banner shows 1 pending → `context.setOffline(false)` → the update reaches the server
 
 **Auth and access**
 

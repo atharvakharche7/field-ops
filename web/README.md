@@ -30,6 +30,7 @@ only talks to one address and the httpOnly login cookie works without extra CORS
 | `pnpm preview` | Serve the `dist/` build locally (also forwards `/api`) |
 | `pnpm lint` | Check the code with oxlint |
 | `pnpm test` | Unit tests (Vitest): offline queue, sync rules, status rules |
+| `pnpm test:e2e` | End-to-end tests (Playwright) in a real browser. Starts the backend and `pnpm preview` if they aren't running; needs `docker start fieldops-postgres` first. One-time setup: `pnpm exec playwright install chromium` |
 
 ## Trying offline mode
 
